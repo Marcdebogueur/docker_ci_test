@@ -1,0 +1,113 @@
+# ╔════════════════════════════════════════════════════════════════╗
+# ║  DOCKERFILE POUR LARAVEL                                       ║
+# ║  Emplacement : docker/php/Dockerfile                           ║
+# ╚════════════════════════════════════════════════════════════════╝
+
+# ============================================
+# ÉTAPE 1 : Image de base
+# ============================================
+# On part de l'image officielle PHP 8.2 avec FPM (FastCGI Process Manager)
+# FPM permet à Nginx de communiquer avec PHP
+
+FROM php:8.3-fpm
+
+# ============================================
+# ÉTAPE 2 : Installer les dépendances système
+# ============================================
+# Ces paquets sont nécessaires pour compiler certaines extensions PHP
+
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    zip \
+    unzip \
+    libzip-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Explication :
+#   git         → Pour Composer
+#   curl        → Pour télécharger des fichiers
+#   libpng-dev  → Pour l'extension GD (images)
+#   libonig-dev → Pour l'extension mbstring
+#   libxml2-dev → Pour l'extension XML
+#   zip/unzip   → Pour Composer
+#   libzip-dev  → Pour l'extension zip
+#   libpq-dev   → Pour PostgreSQL (optionnel)
+#   rm -rf...   → Nettoie le cache apt (réduit la taille de l'image)
+
+# ============================================
+# ÉTAPE 3 : Installer les extensions PHP
+# ============================================
+# Laravel a besoin de ces extensions
+
+RUN docker-php-ext-install \
+    pdo_mysql \
+    mbstring \
+    exif \
+    pcntl \
+    bcmath \
+    gd \
+    zip
+
+# Explication :
+#   pdo_mysql → Connexion à MySQL
+#   mbstring  → Manipulation de chaînes multi-octets (UTF-8)
+#   exif      → Métadonnées des images
+#   pcntl     → Contrôle des processus (pour les queues)
+#   bcmath    → Calculs de précision arbitraire
+#   gd        → Manipulation d'images
+#   zip       → Compression/décompression
+
+# ============================================
+# ÉTAPE 4 : Installer Composer
+# ============================================
+# On copie Composer depuis son image officielle
+
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# ============================================
+# ÉTAPE 5 : Créer un utilisateur non-root
+# ============================================
+# Pour des raisons de sécurité, on ne travaille pas en root
+
+RUN groupadd -g 1000 www && \
+    useradd -u 1000 -ms /bin/bash -g www www
+
+# ============================================
+# ÉTAPE 6 : Définir le dossier de travail
+# ============================================
+# Tous les chemins relatifs partiront de ce dossier
+
+WORKDIR /var/www/html
+
+# ============================================
+# ÉTAPE 7 : Copier le code (pour la production)
+# ============================================
+# En développement, on utilisera un volume à la place
+# Ces lignes sont utiles pour la production
+
+COPY --chown=www:www . /var/www/html
+
+# ============================================
+# ÉTAPE 8 : Définir l'utilisateur par défaut
+# ============================================
+
+USER www
+
+# ============================================
+# ÉTAPE 9 : Exposer le port PHP-FPM
+# ============================================
+# PHP-FPM écoute sur le port 9000 par défaut
+
+EXPOSE 9000
+
+# ============================================
+# ÉTAPE 10 : Commande de démarrage
+# ============================================
+# Lance PHP-FPM quand le container démarre
+
+CMD ["php-fpm"]

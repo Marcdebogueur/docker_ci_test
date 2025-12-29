@@ -1,0 +1,91 @@
+# ╔════════════════════════════════════════════════════════════════╗
+# ║  CI GITHUB ACTIONS - Laravel + MySQL + PHPStan + Tests        ║
+# ╚════════════════════════════════════════════════════════════════╝
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  tests:
+    name: "Tests PHP"
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      # 1️⃣ Récupérer le code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2️⃣ Installer PHP 8.3 + extensions nécessaires
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, ctype, json, mysql, pdo_mysql, bcmath, gd, zip
+          coverage: none
+
+      # 3️⃣ Cache Composer
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      # 4️⃣ Installer les dépendances Composer
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      # 5️⃣ Préparer Laravel
+      - name: Prepare Laravel environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # 6️⃣ Configurer la base de données pour CI
+      - name: Setup database
+        run: |
+          echo "DB_CONNECTION=mysql" >> .env
+          echo "DB_HOST=127.0.0.1" >> .env
+          echo "DB_PORT=3306" >> .env
+          echo "DB_DATABASE=testing" >> .env
+          echo "DB_USERNAME=root" >> .env
+          echo "DB_PASSWORD=password" >> .env
+
+      # 7️⃣ Lancer les migrations
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      # 8️⃣ Vérifier le style de code avec Pint
+      - name: Code style check (Pint)
+        run: ./vendor/bin/pint --test
+
+      # 9️⃣ Analyse statique avec PHPStan (mémoire augmentée)
+      - name: Static analysis (PHPStan)
+        run: ./vendor/bin/phpstan analyse --memory-limit=2G
+
+      # 🔟 Exécuter les tests Laravel
+      - name: Run tests
+        run: php artisan test --no-interaction --parallel

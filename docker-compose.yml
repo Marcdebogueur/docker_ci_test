@@ -1,0 +1,204 @@
+# ╔════════════════════════════════════════════════════════════════╗
+# ║  DOCKER-COMPOSE.YML - EXPLIQUÉ LIGNE PAR LIGNE                 ║
+# ║  Emplacement : à la racine du projet (todo-api/docker-compose.yml)
+# ╚════════════════════════════════════════════════════════════════╝
+
+
+# ============================================
+# VERSION (optionnel depuis Docker Compose V2)
+# ============================================
+# Tu peux l'omettre, mais c'est plus clair de le mettre
+
+
+# ============================================
+# SERVICES
+# ============================================
+# Chaque service = un container
+# On en a 3 : app (PHP), nginx, mysql
+
+services:
+
+  # ══════════════════════════════════════════
+  # SERVICE 1 : APP (PHP/Laravel)
+  # ══════════════════════════════════════════
+  app:
+    # Comment construire l'image ?
+    # Va dans docker/php et utilise le Dockerfile
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+
+    # Nom du container (optionnel mais pratique)
+    container_name: todo-app
+
+    # Redémarre automatiquement si le container plante
+    restart: unless-stopped
+
+    # ════════════════════════════════════════
+    # VOLUME : Lien entre ton PC et le container
+    # ════════════════════════════════════════
+    #
+    # Format : chemin_pc:chemin_container
+    #
+    # ./ = dossier actuel (todo-api/)
+    # /var/www/html = dossier dans le container
+    #
+    # Tout ce que tu modifies dans todo-api/
+    # est immédiatement visible dans le container
+    #
+    volumes:
+      - ./:/var/www/html
+
+    # ════════════════════════════════════════
+    # NETWORKS : Sur quel réseau communiquer ?
+    # ════════════════════════════════════════
+    #
+    # Les containers sur le même réseau peuvent
+    # se parler par leur nom (app, nginx, mysql)
+    #
+    networks:
+      - todo-network
+
+    # ════════════════════════════════════════
+    # DEPENDS_ON : Ordre de démarrage
+    # ════════════════════════════════════════
+    #
+    # Attend que mysql soit démarré avant de lancer app
+    # (Laravel a besoin de la DB pour fonctionner)
+    #
+    depends_on:
+      - mysql
+
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+  # ══════════════════════════════════════════
+  # SERVICE 2 : NGINX (Serveur web)
+  # ══════════════════════════════════════════
+  nginx:
+    # Utilise l'image officielle nginx (pas de build custom)
+    image: nginx:alpine
+
+    # alpine = version légère de Linux (5 MB vs 100+ MB)
+
+    container_name: todo-nginx
+    restart: unless-stopped
+
+    # ════════════════════════════════════════
+    # PORTS : Exposition vers ton PC
+    # ════════════════════════════════════════
+    #
+    # Format : port_pc:port_container
+    #
+    # 8080:80 signifie :
+    #   - localhost:8080 sur ton PC
+    #   - redirige vers port 80 du container
+    #
+    # Pourquoi 8080 et pas 80 ?
+    #   - Le port 80 est peut-être déjà utilisé (Apache, etc.)
+    #   - 8080 est un port alternatif courant
+    #
+    ports:
+      - "8080:80"
+
+    # ════════════════════════════════════════
+    # VOLUMES pour Nginx
+    # ════════════════════════════════════════
+    #
+    # 1. Le code Laravel (pour servir les fichiers statiques)
+    # 2. La config Nginx personnalisée
+    #
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+
+    networks:
+      - todo-network
+
+    # Nginx a besoin que PHP soit prêt
+    depends_on:
+      - app
+
+
+  # ══════════════════════════════════════════
+  # SERVICE 3 : MYSQL (Base de données)
+  # ══════════════════════════════════════════
+  mysql:
+    # Image officielle MySQL 8.0
+    image: mysql:8.0
+
+    container_name: todo-mysql
+    restart: unless-stopped
+
+    # ════════════════════════════════════════
+    # ENVIRONMENT : Variables d'environnement
+    # ════════════════════════════════════════
+    #
+    # Configure MySQL au premier démarrage
+    #
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+
+    # ════════════════════════════════════════
+    # VOLUME pour MySQL
+    # ════════════════════════════════════════
+    #
+    # TRÈS IMPORTANT !
+    #
+    # Sans volume : tu perds TOUTES les données
+    #               quand le container s'arrête
+    #
+    # Avec volume : les données persistent
+    #               même si tu supprimes le container
+    #
+    # mysql-data = volume nommé (géré par Docker)
+    # /var/lib/mysql = où MySQL stocke ses fichiers
+    #
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+    # ════════════════════════════════════════
+    # PORTS MySQL (optionnel)
+    # ════════════════════════════════════════
+    #
+    # 3306:3306 te permet de te connecter
+    # depuis ton PC avec un outil comme DBeaver
+    #
+    # Tu peux commenter cette ligne si tu n'en as pas besoin
+    #
+    ports:
+      - "3306:3306"
+
+    networks:
+      - todo-network
+
+
+# ══════════════════════════════════════════════
+# NETWORKS : Définition du réseau
+# ══════════════════════════════════════════════
+#
+# Crée un réseau privé pour que les containers
+# communiquent entre eux de façon isolée
+#
+networks:
+  todo-network:
+    driver: bridge
+
+
+# ══════════════════════════════════════════════
+# VOLUMES : Définition des volumes nommés
+# ══════════════════════════════════════════════
+#
+# Les volumes nommés sont gérés par Docker
+# Ils persistent même si tu fais "docker compose down"
+#
+# Pour les supprimer vraiment :
+#   docker compose down -v   (le -v supprime les volumes)
+#
+volumes:
+  mysql-data:
